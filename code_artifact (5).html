@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>即時搶答系統</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-user-select: none; user-select: none; }
+        input { -webkit-user-select: auto; user-select: auto; }
+        button { touch-action: manipulation; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 selection:bg-indigo-100 min-h-screen">
+
+    <!-- 換班重設對話框 (Modal) -->
+    <div id="reset-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+        <div class="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl flex flex-col">
+            <div class="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-3xl mb-4 self-center">⚠️</div>
+            <h3 class="text-2xl font-black text-slate-800 mb-2 text-center">開始新課程</h3>
+            <p class="text-slate-500 text-sm mb-6 text-center leading-relaxed">此操作會將<strong class="text-red-500">所有學生踢出系統</strong>。<br>請設定下一節課的分組數量：</p>
+            
+            <label class="font-bold text-slate-700 mb-2">分組數量 (1~8組)</label>
+            <select id="team-count-select" class="w-full p-4 border-2 border-slate-200 rounded-xl mb-8 text-lg font-bold text-slate-700 outline-none focus:border-indigo-500">
+                <option value="1">1 組 (全班不分組)</option>
+                <option value="2">2 組</option>
+                <option value="3">3 組</option>
+                <option value="4">4 組</option>
+                <option value="5">5 組</option>
+                <option value="6">6 組</option>
+                <option value="7">7 組</option>
+                <option value="8">8 組</option>
+            </select>
+            
+            <div class="flex gap-4">
+                <button onclick="closeResetModal()" class="flex-1 py-4 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl font-bold transition-colors">取消</button>
+                <button id="btn-confirm-reset" class="flex-1 py-4 bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/30 rounded-xl font-bold transition-colors">確定重設</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 畫面 1：載入中 -->
+    <div id="loading-screen" class="min-h-[100dvh] flex items-center justify-center bg-gray-50 text-gray-600 font-medium text-2xl">
+        載入中，請稍候...
+    </div>
+
+    <!-- 畫面 2：身分選擇 -->
+    <div id="role-selection-screen" class="hidden min-h-[100dvh] w-full flex-col items-center justify-center p-6 md:p-12 space-y-12 relative overflow-hidden">
+        <div class="text-center space-y-4 z-10">
+            <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight text-slate-900 drop-shadow-sm">即時搶答系統</h1>
+            <p class="text-xl md:text-3xl text-slate-500 font-medium mt-4">請選擇您的身分進入課堂</p>
+        </div>
+        
+        <div class="flex flex-col md:flex-row gap-6 md:gap-12 w-full max-w-5xl items-stretch justify-center z-10 mt-8">
+            <button id="btn-select-teacher" class="flex-1 group flex flex-col items-center justify-center p-12 md:p-16 bg-white/90 backdrop-blur-sm rounded-[2.5rem] shadow-lg hover:shadow-2xl transition-all duration-300 border-4 border-transparent hover:border-indigo-400 active:scale-95">
+                <div class="w-28 h-28 md:w-40 md:h-40 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform text-6xl md:text-7xl shadow-inner">⚙️</div>
+                <h2 class="text-4xl md:text-5xl font-bold text-slate-800 tracking-wide">老師控制台</h2>
+                <p class="text-slate-500 mt-4 text-center text-xl md:text-2xl font-medium">管理隊伍、設定模式</p>
+            </button>
+
+            <button id="btn-select-student" class="flex-1 group flex flex-col items-center justify-center p-12 md:p-16 bg-white/90 backdrop-blur-sm rounded-[2.5rem] shadow-lg hover:shadow-2xl transition-all duration-300 border-4 border-transparent hover:border-emerald-400 active:scale-95">
+                <div class="w-28 h-28 md:w-40 md:h-40 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform text-6xl md:text-7xl shadow-inner">👥</div>
+                <h2 class="text-4xl md:text-5xl font-bold text-slate-800 tracking-wide">學生搶答器</h2>
+                <p class="text-slate-500 mt-4 text-center text-xl md:text-2xl font-medium">加入隊伍並參與搶答</p>
+            </button>
+        </div>
+    </div>
+
+    <!-- 畫面 3：老師控制台 -->
+    <div id="teacher-dashboard-screen" class="hidden max-w-6xl mx-auto p-4 md:p-8 space-y-8">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-sm">
+            <div class="flex items-center gap-4">
+                <button onclick="goBackToRoleSelection()" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors text-slate-600 text-xl">⬅️</button>
+                <div>
+                    <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-2">⚙️ 教師控制台</h1>
+                    <p class="text-slate-500 mt-1">管理課堂搶答狀態與隊伍</p>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="flex bg-slate-100 p-1 rounded-xl">
+                    <button id="btn-mode-1" class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700">模式一：單次鎖定</button>
+                    <button id="btn-mode-2" class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700">模式二：一般搶答</button>
+                </div>
+                <button onclick="window.showResetModal()" class="flex items-center gap-2 px-5 py-2 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 border border-red-200 transition-colors">
+                    🔄 換班重設
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- 搶答狀態區塊 -->
+                <div id="teacher-status-card" class="p-8 rounded-3xl shadow-sm text-center transition-colors duration-500 flex flex-col justify-center bg-emerald-50 border-2 border-emerald-200">
+                    <h2 id="teacher-status-title" class="text-2xl font-bold mb-4 flex justify-center items-center gap-2">🔄 等待搶答中...</h2>
+                    
+                    <div id="winner-display" class="hidden py-2">
+                        <div id="winner-team-badge" class="inline-block px-6 py-3 rounded-full text-2xl font-black text-white shadow-lg mb-2">Team</div>
+                        <div id="winner-name-text" class="text-4xl font-extrabold text-slate-800 mt-4">Name</div>
+                    </div>
+                    <div id="no-winner-text" class="py-6 text-slate-400 font-medium">尚未有人搶答</div>
+                    
+                    <button id="btn-reset-buzzer" class="mt-6 w-full py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold text-lg transition-colors shadow-lg active:scale-95">重新開放搶答</button>
+                </div>
+
+                <!-- 模式說明 -->
+                <div class="bg-white p-6 rounded-3xl shadow-sm flex flex-col items-start justify-center gap-4">
+                    <div class="w-full">
+                        <h3 class="font-bold text-slate-700 flex items-center gap-2 text-lg">⚠️ 目前模式: <span id="current-mode-text">一般模式</span></h3>
+                        <p id="current-mode-desc" class="text-slate-500 mt-2 text-base leading-relaxed">每次重設後，所有人皆可再次搶答。</p>
+                    </div>
+                    <button id="btn-unlock-students" class="hidden items-center gap-2 px-6 py-3 bg-indigo-50 text-indigo-700 rounded-xl font-bold hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+                        🔓 解除鎖定 (<span id="locked-count">0</span>人)
+                    </button>
+                </div>
+            </div>
+
+            <!-- QR Code -->
+            <div class="bg-white p-6 rounded-3xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 border-l-8 border-indigo-500">
+                <div class="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xl">📱</div>
+                        <h2 class="text-xl font-bold text-slate-800">學生加入條碼</h2>
+                    </div>
+                    <p class="text-slate-500 text-sm md:text-base md:ml-[52px]">請學生掃描右方 QR Code 進入系統，或將此網址傳給學生並請他們點選「學生搶答器」。</p>
+                </div>
+                <div class="flex flex-col items-center shrink-0">
+                    <img id="qr-code-img" src="" alt="QR Code" class="rounded-xl shadow-sm w-32 h-32 object-contain bg-white p-2 border border-slate-100" />
+                </div>
+            </div>
+        </div>
+
+        <!-- 動態隊伍列表區塊 -->
+        <div id="teams-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- 這裡會由 JS 動態生成所有組別 -->
+        </div>
+    </div>
+
+    <!-- 畫面 4：學生註冊 -->
+    <div id="student-registration-screen" class="hidden min-h-[100dvh] flex items-center justify-center p-6 bg-slate-50 relative">
+        <button onclick="goBackToRoleSelection()" class="absolute top-6 left-6 flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold transition-colors bg-white px-4 py-2 rounded-full shadow-sm">⬅️ 返回</button>
+        <div class="bg-white p-8 rounded-3xl shadow-xl w-full max-w-lg">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">👥</div>
+                <h1 class="text-2xl font-bold text-slate-800">加入組別</h1>
+                <p class="text-slate-500 mt-2">請輸入您的姓名並選擇您被分配的組別</p>
+            </div>
+            <form id="registration-form" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">您的姓名</label>
+                    <input type="text" id="student-name-input" placeholder="例如：王小明" required class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">選擇組別</label>
+                    <!-- 動態生成按鈕區塊 -->
+                    <div id="team-selection-container" class="grid grid-cols-2 md:grid-cols-3 gap-3"></div>
+                </div>
+                <button type="submit" id="btn-submit-registration" disabled class="w-full py-4 bg-slate-800 text-white rounded-xl font-bold text-lg shadow-lg disabled:opacity-50">準備搶答！</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 畫面 5：學生搶答器 -->
+    <div id="student-buzzer-screen" class="hidden min-h-[100dvh] flex-col items-center justify-between p-6 transition-colors duration-500">
+        <div class="w-full max-w-md mb-4 flex justify-start">
+            <button onclick="goBackToRoleSelection()" id="buzzer-back-btn" class="flex items-center gap-2 font-bold opacity-70 hover:opacity-100">⬅️ 返回</button>
+        </div>
+        
+        <div class="w-full max-w-md bg-white rounded-3xl shadow-sm p-4 flex items-center justify-between">
+            <div>
+                <div id="buzzer-team-name" class="text-2xl font-black">組別 ?</div>
+                <div id="buzzer-student-name" class="text-slate-500 text-sm font-medium mt-1">Name</div>
+            </div>
+            <div class="text-right">
+                <div class="text-sm font-bold text-slate-400">同組人數</div>
+                <div id="buzzer-team-count" class="text-2xl font-black text-slate-700">0</div>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col items-center justify-center w-full my-8 relative">
+            <div id="buzzer-status-text" class="absolute top-0 text-lg font-bold text-slate-600 mt-[-40px]">準備搶答...</div>
+            <button id="btn-buzz" class="relative flex flex-col items-center justify-center rounded-full transition-all duration-150 w-64 h-64 md:w-80 md:h-80 shadow-2xl touch-manipulation">
+                <span id="btn-buzz-icon" class="hidden text-5xl mb-2 opacity-50">🔓</span>
+                <span id="btn-buzz-text" class="text-6xl md:text-7xl font-black tracking-widest text-white drop-shadow-md">BUZZ</span>
+            </button>
+        </div>
+
+        <div class="w-full max-w-md text-center text-slate-500 text-sm font-medium p-4 bg-white/50 rounded-2xl">
+            模式：<span id="buzzer-mode-text">一般搶答</span>
+        </div>
+    </div>
+
+    <!-- Firebase 邏輯處理 -->
+    <script type="module">
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, runTransaction, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 鑰匙
+        const firebaseConfig = {
+            apiKey: "AIzaSyAjxMoaBk23ydGMqnt2I7K7uelvIDG-P-U",
+            authDomain: "classroombuzzer-9e589.firebaseapp.com",
+            projectId: "classroombuzzer-9e589",
+            storageBucket: "classroombuzzer-9e589.firebasestorage.app",
+            messagingSenderId: "944652678669",
+            appId: "1:944652678669:web:8d3f60162b899eabe0c744",
+            measurementId: "G-XEGGTPX25R"
+        };
+
+        const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const gameId = 'classroombuzzer-9e589';
+        const getGameStateRef = () => doc(db, 'games', gameId, 'data', 'gameState');
+        const getPlayersRef = () => collection(db, 'games', gameId, 'players');
+        const getPlayerDocRef = (uid) => doc(db, 'games', gameId, 'players', uid);
+
+        // 全域狀態變數
+        let currentUser = null;
+        let currentRole = null;
+        let selectedTeam = null; 
+        let myPlayerData = null;
+        
+        let gameState = { status: 'open', winner: null, mode: 2, teamCount: 2 }; // 預設2組
+        let allPlayers = [];
+        let isSendingBuzz = false;
+        
+        let unsubGameState = null;
+        let unsubPlayers = null;
+        let unsubMyPlayer = null;
+
+        // --- 隊伍顏色與主題設定器 ---
+        const getTeamConfig = (index, totalTeams = 2) => {
+            const numIndex = Number(index);
+            const teams = [
+                { name: totalTeams === 1 ? '全班' : '第一組', bg: 'bg-red-500', bgLight: 'bg-red-50', text: 'text-red-700', border: 'border-red-500', borderLight: 'border-red-200', shadow: 'shadow-red-500/50', active: 'active:bg-red-600', activeShadow: '#b91c1c' },
+                { name: '第二組', bg: 'bg-blue-500', bgLight: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', borderLight: 'border-blue-200', shadow: 'shadow-blue-500/50', active: 'active:bg-blue-600', activeShadow: '#1d4ed8' },
+                { name: '第三組', bg: 'bg-emerald-500', bgLight: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', borderLight: 'border-emerald-200', shadow: 'shadow-emerald-500/50', active: 'active:bg-emerald-600', activeShadow: '#047857' },
+                { name: '第四組', bg: 'bg-amber-500', bgLight: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-500', borderLight: 'border-amber-200', shadow: 'shadow-amber-500/50', active: 'active:bg-amber-600', activeShadow: '#b45309' },
+                { name: '第五組', bg: 'bg-purple-500', bgLight: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-500', borderLight: 'border-purple-200', shadow: 'shadow-purple-500/50', active: 'active:bg-purple-600', activeShadow: '#7e22ce' },
+                { name: '第六組', bg: 'bg-pink-500', bgLight: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-500', borderLight: 'border-pink-200', shadow: 'shadow-pink-500/50', active: 'active:bg-pink-600', activeShadow: '#be185d' },
+                { name: '第七組', bg: 'bg-orange-500', bgLight: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-500', borderLight: 'border-orange-200', shadow: 'shadow-orange-500/50', active: 'active:bg-orange-600', activeShadow: '#c2410c' },
+                { name: '第八組', bg: 'bg-cyan-500', bgLight: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-500', borderLight: 'border-cyan-200', shadow: 'shadow-cyan-500/50', active: 'active:bg-cyan-600', activeShadow: '#0e7490' }
+            ];
+            // 處理越界或未知情況，安全回退到第一組
+            if (isNaN(numIndex) || numIndex < 1) return teams[0];
+            return teams[(numIndex - 1) % teams.length];
+        };
+
+        // --- 畫面切換控制 ---
+        const screens = {
+            loading: document.getElementById('loading-screen'),
+            roleSelection: document.getElementById('role-selection-screen'),
+            teacher: document.getElementById('teacher-dashboard-screen'),
+            studentRegistration: document.getElementById('student-registration-screen'),
+            studentBuzzer: document.getElementById('student-buzzer-screen')
+        };
+
+        function showScreen(screenName) {
+            Object.values(screens).forEach(el => el.classList.add('hidden'));
+            if(screens[screenName]) {
+                screens[screenName].classList.remove('hidden');
+                if(screenName === 'roleSelection') screens[screenName].classList.add('flex');
+                if(screenName === 'studentBuzzer') screens[screenName].classList.add('flex');
+            }
+        }
+
+        window.goBackToRoleSelection = function() {
+            currentRole = null;
+            selectedTeam = null; 
+            if(unsubGameState) unsubGameState();
+            if(unsubPlayers) unsubPlayers();
+            if(unsubMyPlayer) unsubMyPlayer();
+            
+            const url = new URL(window.location);
+            url.search = '';
+            window.history.pushState({}, '', url);
+
+            showScreen('roleSelection');
+        };
+
+        // --- 初始化驗證 ---
+        signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
+        
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('role') === 'student') {
+                    startStudentMode();
+                } else {
+                    showScreen('roleSelection');
+                }
+            }
+        });
+
+        // --- 老師模式邏輯 ---
+        document.getElementById('btn-select-teacher').addEventListener('click', () => {
+            currentRole = 'teacher';
+            showScreen('teacher');
+            initTeacherDashboard();
+        });
+
+        async function initTeacherDashboard() {
+            const docSnap = await getDoc(getGameStateRef());
+            if (!docSnap.exists()) {
+                await setDoc(getGameStateRef(), { status: 'open', winner: null, mode: 2, teamCount: 2 });
+            } else if (!docSnap.data().teamCount) {
+                // 相容舊資料庫，如果沒有 teamCount 就補上
+                await updateDoc(getGameStateRef(), { teamCount: 2 });
+            }
+
+            const joinUrl = new URL(window.location.href);
+            joinUrl.searchParams.set('role', 'student');
+            document.getElementById('qr-code-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl.toString())}`;
+
+            unsubGameState = onSnapshot(getGameStateRef(), (doc) => {
+                if (doc.exists()) {
+                    gameState = doc.data();
+                    renderTeacherDashboard();
+                }
+            });
+
+            unsubPlayers = onSnapshot(getPlayersRef(), (snapshot) => {
+                allPlayers = [];
+                snapshot.forEach(d => allPlayers.push({ id: d.id, ...d.data() }));
+                renderTeacherDashboard();
+            });
+        }
+
+        function renderTeacherDashboard() {
+            const btnMode1 = document.getElementById('btn-mode-1');
+            const btnMode2 = document.getElementById('btn-mode-2');
+            
+            if (gameState.mode === 1) {
+                btnMode1.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all bg-white shadow-sm text-indigo-700';
+                btnMode2.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700';
+                document.getElementById('current-mode-text').innerText = '單次鎖定模式';
+                document.getElementById('current-mode-desc').innerText = '搶答成功的學生將被鎖定無法繼續搶答，直到老師解除鎖定。';
+                document.getElementById('btn-unlock-students').classList.replace('hidden', 'flex');
+            } else {
+                btnMode2.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all bg-white shadow-sm text-indigo-700';
+                btnMode1.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700';
+                document.getElementById('current-mode-text').innerText = '一般模式';
+                document.getElementById('current-mode-desc').innerText = '每次重設後，所有人皆可再次搶答。';
+                document.getElementById('btn-unlock-students').classList.replace('flex', 'hidden');
+            }
+
+            const statusCard = document.getElementById('teacher-status-card');
+            const statusTitle = document.getElementById('teacher-status-title');
+            const winnerDisplay = document.getElementById('winner-display');
+            const noWinnerText = document.getElementById('no-winner-text');
+            
+            if (gameState.status === 'open') {
+                statusCard.className = 'p-8 rounded-3xl shadow-sm text-center transition-colors duration-500 flex flex-col justify-center bg-emerald-50 border-2 border-emerald-200';
+                statusTitle.innerHTML = '<span>🔄</span> 等待搶答中...';
+                winnerDisplay.classList.add('hidden');
+                noWinnerText.classList.remove('hidden');
+            } else {
+                statusCard.className = 'p-8 rounded-3xl shadow-sm text-center transition-colors duration-500 flex flex-col justify-center bg-amber-50 border-2 border-amber-200';
+                statusTitle.innerHTML = '<span>🏆</span> 搶答成功！';
+                winnerDisplay.classList.remove('hidden');
+                noWinnerText.classList.add('hidden');
+                
+                if (gameState.winner) {
+                    const winConfig = getTeamConfig(gameState.winner.team, gameState.teamCount);
+                    const badge = document.getElementById('winner-team-badge');
+                    badge.innerText = winConfig.name;
+                    badge.className = `inline-block px-6 py-3 rounded-full text-2xl font-black text-white shadow-lg mb-2 ${winConfig.bg} ${winConfig.shadow}`;
+                    document.getElementById('winner-name-text').innerText = gameState.winner.name;
+                }
+            }
+
+            const lockedCount = allPlayers.filter(p => p.locked).length;
+            document.getElementById('locked-count').innerText = lockedCount;
+            document.getElementById('btn-unlock-students').disabled = (lockedCount === 0);
+
+            // 動態渲染所有組別
+            const teamsContainer = document.getElementById('teams-container');
+            let teamsHtml = '';
+            const maxTeams = gameState.teamCount || 2;
+            
+            for(let i=1; i<=maxTeams; i++) {
+                const teamPlayers = allPlayers.filter(p => p.team === i || p.team === String(i)); // 相容舊字串格式
+                const config = getTeamConfig(i, maxTeams);
+                
+                let playersHtml = teamPlayers.length === 0 
+                    ? `<span class="text-sm text-slate-400 mt-2">尚無學生加入</span>`
+                    : teamPlayers.map(p => `
+                        <div class="${config.bgLight} ${config.text} px-3 py-1.5 rounded-lg text-sm font-medium border ${config.borderLight} flex items-center gap-2">
+                            <span>${p.name}</span>
+                            <button onclick="window.kickStudent('${p.id}')" class="w-5 h-5 flex items-center justify-center bg-white rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm" title="踢除學生">✖</button>
+                        </div>
+                    `).join('');
+
+                teamsHtml += `
+                <div class="bg-white p-6 rounded-3xl shadow-sm border-t-8 ${config.border} flex flex-col items-center">
+                    <h3 class="text-xl font-bold text-slate-800 mb-2">${config.name}</h3>
+                    <div class="${config.bgLight} ${config.text} px-4 py-1 rounded-full text-sm font-bold mb-4">${teamPlayers.length} 人已加入</div>
+                    <div class="w-full">
+                        <h4 class="text-center font-bold text-slate-600 border-b-2 border-slate-100 pb-2 mb-3">已加入學生</h4>
+                        <div class="flex flex-wrap gap-2 justify-center min-h-[40px]">
+                            ${playersHtml}
+                        </div>
+                    </div>
+                </div>
+                `;
+            }
+            teamsContainer.innerHTML = teamsHtml;
+        }
+
+        // --- 老師專屬控制功能 ---
+        document.getElementById('btn-reset-buzzer').addEventListener('click', () => updateDoc(getGameStateRef(), { status: 'open', winner: null }));
+        document.getElementById('btn-mode-1').addEventListener('click', () => updateDoc(getGameStateRef(), { mode: 1 }));
+        document.getElementById('btn-mode-2').addEventListener('click', () => updateDoc(getGameStateRef(), { mode: 2 }));
+        
+        document.getElementById('btn-unlock-students').addEventListener('click', () => {
+            allPlayers.filter(p => p.locked).forEach(p => updateDoc(getPlayerDocRef(p.id), { locked: false }));
+        });
+
+        window.kickStudent = async (uid) => {
+            if(confirm("確定要將這位學生踢出房間嗎？")) {
+                try {
+                    await deleteDoc(getPlayerDocRef(uid));
+                } catch(e) { console.error("Kick error", e); }
+            }
+        };
+
+        // --- 換班重設 (Modal) ---
+        const resetModal = document.getElementById('reset-modal');
+        window.showResetModal = () => {
+            document.getElementById('team-count-select').value = gameState.teamCount || 2;
+            resetModal.classList.remove('hidden');
+        };
+        window.closeResetModal = () => {
+            resetModal.classList.add('hidden');
+        };
+        
+        document.getElementById('btn-confirm-reset').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-confirm-reset');
+            const newTeamCount = parseInt(document.getElementById('team-count-select').value);
+            btn.innerText = "清除中...";
+            btn.disabled = true;
+            
+            try {
+                // 批次刪除所有現有玩家
+                const deletePromises = allPlayers.map(p => deleteDoc(getPlayerDocRef(p.id)));
+                await Promise.all(deletePromises);
+                
+                // 重設遊戲狀態與設定新組數
+                await updateDoc(getGameStateRef(), {
+                    status: 'open',
+                    winner: null,
+                    teamCount: newTeamCount
+                });
+                
+                window.closeResetModal();
+            } catch(err) {
+                console.error(err);
+            } finally {
+                btn.innerText = "確定重設";
+                btn.disabled = false;
+            }
+        });
+
+
+        // --- 學生模式邏輯 ---
+        document.getElementById('btn-select-student').addEventListener('click', startStudentMode);
+
+        function startStudentMode() {
+            currentRole = 'student';
+            showScreen('loading');
+
+            // 隨時監聽遊戲狀態，確保註冊畫面能抓到最新 teamCount
+            if (!unsubGameState) {
+                unsubGameState = onSnapshot(getGameStateRef(), (doc) => {
+                    if (doc.exists()) {
+                        gameState = doc.data();
+                        isSendingBuzz = false;
+                        renderTeamSelection(); // 隨時更新註冊畫面的組別選項
+                        if(myPlayerData) renderStudentBuzzer(); // 如果在搶答畫面，更新狀態
+                    }
+                });
+            }
+
+            // 監聽自己的玩家狀態，如果被踢除會跳回註冊頁面
+            unsubMyPlayer = onSnapshot(getPlayerDocRef(currentUser.uid), (doc) => {
+                if (doc.exists()) {
+                    myPlayerData = { id: doc.id, ...doc.data() };
+                    showScreen('studentBuzzer');
+                    initStudentBuzzer();
+                } else {
+                    // 如果文件不存在 (被老師踢掉或全新進入)
+                    myPlayerData = null;
+                    selectedTeam = null; 
+                    btnSubmitReg.disabled = true;
+                    showScreen('studentRegistration');
+                    renderTeamSelection();
+                }
+            });
+        }
+
+        const inputName = document.getElementById('student-name-input');
+        const btnSubmitReg = document.getElementById('btn-submit-registration');
+
+        function checkRegForm() {
+            if (inputName.value.trim() !== '' && selectedTeam !== null) {
+                btnSubmitReg.disabled = false;
+            } else {
+                btnSubmitReg.disabled = true;
+            }
+        }
+        inputName.addEventListener('input', checkRegForm);
+
+        // 動態生成學生的組別選擇按鈕
+        function renderTeamSelection() {
+            if(currentRole !== 'student' || myPlayerData) return; // 如果不是在註冊畫面就不渲染
+            
+            const container = document.getElementById('team-selection-container');
+            container.innerHTML = '';
+            const maxTeams = gameState.teamCount || 2;
+            
+            // 【新增修復】：如果只有一組，就自動幫學生預設選好，不須額外點擊
+            if (maxTeams === 1) {
+                selectedTeam = 1;
+            } else if (selectedTeam > maxTeams) {
+                selectedTeam = null; // 防呆：避免老師縮減組數時發生錯誤
+            }
+            
+            for(let i=1; i<=maxTeams; i++) {
+                const config = getTeamConfig(i, maxTeams);
+                const isSelected = selectedTeam === i;
+                
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.innerText = config.name;
+                btn.className = `py-4 rounded-xl font-bold border-2 transition-all ${
+                    isSelected 
+                        ? `${config.border} ${config.bgLight} ${config.text} shadow-md` 
+                        : `border-gray-200 bg-white text-gray-500 hover:${config.bgLight} hover:${config.borderLight}`
+                }`;
+                btn.onclick = () => {
+                    selectedTeam = i;
+                    renderTeamSelection(); // 重新渲染更新顏色
+                    checkRegForm();
+                };
+                container.appendChild(btn);
+            }
+            
+            // 畫面生成完畢後，強制檢查一次表單狀態，解鎖準備搶答按鈕
+            checkRegForm();
+        }
+
+        document.getElementById('registration-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            btnSubmitReg.innerText = '加入中...';
+            btnSubmitReg.disabled = true;
+            await setDoc(getPlayerDocRef(currentUser.uid), {
+                name: inputName.value.trim(),
+                team: selectedTeam,
+                locked: false
+            });
+            btnSubmitReg.innerText = '準備搶答！'; // 狀態會透過 onSnapshot 切換畫面
+        });
+
+        function initStudentBuzzer() {
+            if(!unsubPlayers) {
+                unsubPlayers = onSnapshot(getPlayersRef(), (snapshot) => {
+                    let count = 0;
+                    snapshot.forEach(doc => { if (doc.data().team === myPlayerData.team) count++; });
+                    document.getElementById('buzzer-team-count').innerText = count;
+                });
+            }
+            renderStudentBuzzer();
+        }
+
+        function renderStudentBuzzer() {
+            if(!myPlayerData || isSendingBuzz) return; 
+            
+            const config = getTeamConfig(myPlayerData.team, gameState.teamCount);
+            const screenEl = document.getElementById('student-buzzer-screen');
+            const teamNameEl = document.getElementById('buzzer-team-name');
+            const backBtn = document.getElementById('buzzer-back-btn');
+
+            // 套用該組別專屬顏色
+            screenEl.className = `min-h-[100dvh] flex flex-col items-center justify-between p-6 transition-colors duration-500 ${config.bgLight}`;
+            teamNameEl.className = `text-2xl font-black ${config.text}`;
+            backBtn.className = `flex items-center gap-2 font-bold opacity-70 hover:opacity-100 ${config.text}`;
+            
+            teamNameEl.innerText = config.name;
+            document.getElementById('buzzer-student-name').innerText = myPlayerData.name;
+            document.getElementById('buzzer-mode-text').innerText = gameState.mode === 1 ? '單次鎖定' : '一般搶答';
+
+            const btn = document.getElementById('btn-buzz');
+            const statusText = document.getElementById('buzzer-status-text');
+            const btnText = document.getElementById('btn-buzz-text');
+            const btnIcon = document.getElementById('btn-buzz-icon');
+            const amIWinner = gameState.winner?.id === currentUser.uid;
+
+            let buttonState = 'active';
+            if (myPlayerData.locked) buttonState = 'locked';
+            else if (gameState.status !== 'open') buttonState = 'disabled';
+
+            let baseClasses = "relative flex flex-col items-center justify-center rounded-full transition-all duration-150 w-64 h-64 md:w-80 md:h-80 shadow-2xl touch-manipulation ";
+            
+            if (buttonState === 'active') {
+                btn.className = baseClasses + `${config.bg} ${config.shadow} ${config.active} active:scale-95 active:translate-y-4`;
+                btn.style.boxShadow = `0 20px 0 0 ${config.activeShadow}, 0 30px 40px rgba(0,0,0,0.2)`;
+                btn.style.transform = 'translateY(0)';
+                btn.disabled = false;
+                
+                statusText.innerText = "準備搶答...";
+                btnIcon.classList.add('hidden');
+                btnText.innerText = "BUZZ";
+                btnText.className = "text-6xl md:text-7xl font-black tracking-widest text-white drop-shadow-md";
+            } 
+            else if (buttonState === 'locked') {
+                btn.className = baseClasses + 'bg-slate-300 text-slate-500 shadow-none cursor-not-allowed border-4 border-slate-400 border-dashed';
+                btn.style.boxShadow = 'none';
+                btn.style.transform = 'translateY(10px)';
+                btn.disabled = true;
+
+                statusText.innerText = "您已被鎖定，等待老師解除";
+                btnIcon.classList.remove('hidden');
+                btnText.innerText = "已鎖定";
+                btnText.className = "text-3xl font-black tracking-widest";
+            } 
+            else if (buttonState === 'disabled') {
+                btn.className = baseClasses + 'bg-gray-200 text-gray-400 shadow-none cursor-not-allowed opacity-80';
+                btn.style.boxShadow = 'none';
+                btn.style.transform = 'translateY(10px)';
+                btn.disabled = true;
+
+                statusText.innerText = !amIWinner ? "已被搶答！" : "";
+                btnIcon.classList.add('hidden');
+                btnText.innerText = amIWinner ? "成功!" : "BUZZ";
+                btnText.className = "text-6xl md:text-7xl font-black tracking-widest text-white drop-shadow-md";
+            }
+        }
+
+        // --- 最速觸控搶答優化 ---
+        const btnBuzz = document.getElementById('btn-buzz');
+        
+        async function handleBuzzEvent(e) {
+            e.preventDefault(); 
+            
+            if (myPlayerData.locked || gameState?.status !== 'open' || isSendingBuzz) return;
+
+            // 1. 【樂觀 UI 更新】立即改變按鈕外觀，給予學生即時爽快回饋
+            isSendingBuzz = true; 
+            const statusText = document.getElementById('buzzer-status-text');
+            const btnText = document.getElementById('btn-buzz-text');
+            
+            btnBuzz.disabled = true;
+            btnBuzz.style.transform = 'translateY(10px)'; 
+            btnBuzz.style.boxShadow = 'none';
+            statusText.innerText = "傳送中...";
+            btnText.innerText = "連線...";
+            btnText.className = "text-5xl font-black tracking-widest text-white drop-shadow-md";
+
+            // 2. 背景送出資料到 Firebase 驗證
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const gameDoc = await transaction.get(getGameStateRef());
+                    if (!gameDoc.exists()) throw "找不到遊戲狀態";
+                    
+                    const data = gameDoc.data();
+                    if (data.status === 'open') {
+                        transaction.update(getGameStateRef(), {
+                            status: 'closed',
+                            winner: { id: currentUser.uid, name: myPlayerData.name, team: myPlayerData.team }
+                        });
+                        if (data.mode === 1) {
+                            transaction.update(getPlayerDocRef(currentUser.uid), { locked: true });
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error("搶答錯誤:", err);
+                isSendingBuzz = false; 
+                renderStudentBuzzer(); // 如果發生意外錯誤，回復原本狀態
+            }
+        }
+
+        // 綁定觸控與點擊，消除手機延遲
+        btnBuzz.addEventListener('touchstart', handleBuzzEvent, { passive: false });
+        btnBuzz.addEventListener('mousedown', handleBuzzEvent); 
+    </script>
+</body>
+</html>
